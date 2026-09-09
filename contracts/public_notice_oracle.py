@@ -3,7 +3,6 @@
 import json
 from dataclasses import dataclass
 from genlayer import *
-import genlayer.gl.vm as glvm
 
 
 @allow_storage
@@ -34,33 +33,33 @@ class PublicNoticeOracle(gl.Contract):
 
     def _validate_input(self, record_id: str, source_url: str, question: str) -> None:
         if len(record_id) < 1 or len(record_id) > 64:
-            raise glvm.UserError("record_id must be 1-64 characters")
+            raise gl.vm.UserError("record_id must be 1-64 characters")
         if not source_url.startswith("https://"):
-            raise glvm.UserError("source_url must use https")
+            raise gl.vm.UserError("source_url must use https")
         if len(source_url) > 512:
-            raise glvm.UserError("source_url is too long")
+            raise gl.vm.UserError("source_url is too long")
         if len(question) < 5 or len(question) > 500:
-            raise glvm.UserError("question must be 5-500 characters")
+            raise gl.vm.UserError("question must be 5-500 characters")
 
     def _validate_result(self, result: dict) -> None:
         if not isinstance(result, dict):
-            raise glvm.UserError("verification result must be an object")
+            raise gl.vm.UserError("verification result must be an object")
         if "verdict" not in result or not isinstance(result["verdict"], str):
-            raise glvm.UserError("verification result missing verdict")
+            raise gl.vm.UserError("verification result missing verdict")
         if "evidence" not in result or not isinstance(result["evidence"], str):
-            raise glvm.UserError("verification result missing evidence")
+            raise gl.vm.UserError("verification result missing evidence")
         if result["verdict"] not in ("supported", "contradicted", "unclear"):
-            raise glvm.UserError("invalid verdict")
+            raise gl.vm.UserError("invalid verdict")
         if len(result["evidence"]) > 700:
-            raise glvm.UserError("evidence is too long")
+            raise gl.vm.UserError("evidence is too long")
         if result["verdict"] != "unclear" and len(result["evidence"].strip()) == 0:
-            raise glvm.UserError("evidence is required for decisive verdicts")
+            raise gl.vm.UserError("evidence is required for decisive verdicts")
 
     @gl.public.write
     def verify_notice(self, record_id: str, source_url: str, question: str) -> None:
         self._validate_input(record_id, source_url, question)
         if record_id in self.records:
-            raise glvm.UserError("record_id already exists")
+            raise gl.vm.UserError("record_id already exists")
 
         def inspect_source() -> dict:
             page_text = gl.nondet.web.render(source_url, mode="text")
@@ -93,11 +92,11 @@ Decision rules:
 """
             result = gl.nondet.exec_prompt(prompt, response_format="json")
             if not isinstance(result, dict):
-                raise glvm.UserError("LLM returned non-object JSON")
+                raise gl.vm.UserError("LLM returned non-object JSON")
             return result
 
         def validator(leader_result) -> bool:
-            if not isinstance(leader_result, glvm.Return):
+            if not isinstance(leader_result, gl.vm.Return):
                 return False
             try:
                 leader_data = leader_result.calldata
@@ -138,7 +137,7 @@ Decision rules:
                 # Validator uncertainty is a disagreement, never an implicit accept.
                 return False
 
-        result = glvm.run_nondet_unsafe(inspect_source, validator)
+        result = gl.vm.run_nondet_unsafe(inspect_source, validator)
         self._validate_result(result)
 
         self.records[record_id] = Verification(
@@ -154,7 +153,7 @@ Decision rules:
     @gl.public.view
     def get_record(self, record_id: str) -> dict:
         if record_id not in self.records:
-            raise glvm.UserError("record not found")
+            raise gl.vm.UserError("record not found")
         record = self.records[record_id]
         return {
             "record_id": record.record_id,
